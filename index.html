@@ -69,6 +69,8 @@ input,select{width:100%;background:#101010;border:1px solid var(--line);padding:
 .chart{background:#101010;border:1px solid var(--line);padding:8px}canvas{width:100%;height:auto}
 .toast{position:fixed;left:10px;right:10px;top:10px;background:var(--text);color:#111;padding:12px;display:flex;justify-content:space-between;gap:8px;z-index:20}
 .toast[hidden]{display:none}.toast button{background:#111;color:#fff;border:0;padding:8px}
+#boot[hidden],#app[hidden]{display:none !important}
+.sync{font-family:"Share Tech Mono",monospace;font-size:11px;color:#8f8b83}
 .check{display:flex;gap:8px;padding:8px 0;border-top:1px solid var(--line)}
 table.plain{width:100%;border-collapse:collapse;font-size:14px}table.plain td{padding:6px 2px;border-bottom:1px solid var(--line)}
 .void{opacity:.4;text-decoration:line-through}
@@ -89,7 +91,53 @@ function seed(){
   return {seq:20,users:[],types:types.map((s,i)=>{const [name,cents,kind]=s.split("|");return {id:i+1,name,priceCents:+cents,kind,active:true,sort:i}}),sessions:[],entries:[],settings:{openDays:[5,6,0],cutoff:8}};
 }
 function db(){try{return JSON.parse(localStorage.getItem(KEY))||seed()}catch(e){return seed()}}
-function save(d){localStorage.setItem(KEY,JSON.stringify(d))}
+let pushTimer=null, remoteRev=0, pushing=false;
+function save(d){
+  d.rev=Date.now();
+  localStorage.setItem(KEY,JSON.stringify(d));
+  clearTimeout(pushTimer);
+  pushTimer=setTimeout(()=>pushDb(d),250);
+}
+const ROOM="fam7k2porte";
+const KV="https://keyvalue.immanuel.co/api/KeyVal";
+async function kvGet(key){
+  const r=await fetch(KV+"/GetValue/"+ROOM+"/"+key);
+  if(!r.ok) return null;
+  const t=await r.text();
+  if(!t||t.includes("ExceptionMessage")) return null;
+  return JSON.parse(t);
+}
+async function kvSet(key,value){
+  await fetch(KV+"/UpdateValue/"+ROOM+"/"+key+"/"+encodeURIComponent(value),{method:"POST",body:""});
+}
+async function pushDb(d){
+  if(pushing){clearTimeout(pushTimer); pushTimer=setTimeout(()=>pushDb(db()),400); return}
+  pushing=true;
+  try{
+    const raw=JSON.stringify(d);
+    const size=350;
+    const parts=[];
+    for(let i=0;i<raw.length;i+=size) parts.push(raw.slice(i,i+size));
+    await kvSet("n", String(parts.length));
+    for(let i=0;i<parts.length;i++) await kvSet("p"+i, parts[i]);
+    await kvSet("rev", String(d.rev||Date.now()));
+    remoteRev=d.rev||Date.now();
+    const el=document.getElementById("sync"); if(el) el.textContent="En ligne";
+  }catch(e){const el=document.getElementById("sync"); if(el) el.textContent="Hors ligne"}
+  pushing=false;
+}
+async function pullDb(){
+  const rev=await kvGet("rev");
+  if(!rev||Number(rev)===remoteRev) return null;
+  const n=Number(await kvGet("n"));
+  if(!n) return null;
+  let raw="";
+  for(let i=0;i<n;i++){const part=await kvGet("p"+i); if(part==null) return null; raw+=part}
+  const data=JSON.parse(raw);
+  remoteRev=Number(rev);
+  localStorage.setItem(KEY,JSON.stringify(data));
+  return data;
+}
 function nid(d){return d.seq++}
 const S={user:null,screen:"login",pin:"",pin2:"",step:1,err:"",name:"",mode:localStorage.getItem("fam_mode")||"lot",lot:{},view:"caisse",sessionId:null,detail:false,range:"week",compare:[],revealed:{},temp:null,recovery:""};
 const app=document.getElementById("app");
@@ -116,8 +164,8 @@ function render(){
   app.innerHTML=(views[S.screen]||viewLogin)();
   if(S.screen==="app"&&S.user&&S.user.role==="admin"&&S.view==="heures")draw();
 }
-function viewSetup(){return '<div class="screen"><div class="auth">'+mark()+'<div class="kicker">Première fois</div><h2>Ton compte</h2><p class="lead">Toi seul verras les totaux. Les autres ne verront que les boutons.</p><label><span>Nom</span><input id="name" value="'+esc(S.name)+'"></label>'+dots(S.pin)+keys()+'<div class="err">'+esc(S.err)+'</div><button class="btn red block" data-act="setup">Créer</button></div></div>'}
-function viewLogin(){return '<div class="screen"><div class="auth">'+mark()+'<div class="kicker">Guichet</div><h2>Ouverture</h2><label><span>Nom</span><input id="name" value="'+esc(S.name)+'"></label>'+dots(S.pin)+keys()+'<div class="err">'+esc(S.err)+'</div><button class="btn red block" data-act="login">Entrer</button><div style="display:flex;justify-content:space-between"><button class="link" data-act="goto" data-to="request">Demander un accès</button></div></div></div>'}
+function viewSetup(){return '<div class="screen"><div class="auth">'+mark()+'<div class="kicker">Première fois</div><h2>Ton compte</h2><p class="lead">Toi seul verras les totaux. Les autres téléphones ouvrent le même lien et ne voient que les boutons.</p><label><span>Nom</span><input id="name" value="'+esc(S.name)+'"></label>'+dots(S.pin)+keys()+'<div class="err">'+esc(S.err)+'</div><button class="btn red block" data-act="setup">Créer</button></div></div>'}
+function viewLogin(){return '<div class="screen"><div class="auth">'+mark()+'<div class="kicker">Guichet</div><h2>Ouverture</h2><p class="lead">Même lien sur tous les téléphones. Les entrées se partagent.</p><label><span>Nom</span><input id="name" value="'+esc(S.name)+'"></label>'+dots(S.pin)+keys()+'<div class="err">'+esc(S.err)+'</div><button class="btn red block" data-act="login">Entrer</button><div style="display:flex;justify-content:space-between"><button class="link" data-act="goto" data-to="request">Demander un accès</button></div></div></div>'}
 function viewRequest(){return '<div class="screen"><div class="auth">'+mark()+'<div class="kicker">Équipe</div><h2>Demande</h2><p class="lead">Nom + PIN à 6 chiffres. Le gérant valide.</p><label><span>Nom</span><input id="name" value="'+esc(S.name)+'"></label><div class="muted">'+(S.step===1?"Choisis le PIN":"Confirme le PIN")+"</div>"+dots(S.step===1?S.pin:S.pin2)+keys()+'<div class="err">'+esc(S.err)+'</div><button class="btn red block" data-act="request">Envoyer</button><button class="link" data-act="goto" data-to="login">Retour</button></div></div>'}
 function viewPending(){return '<div class="screen"><div class="auth">'+mark()+'<h2>En attente</h2><p class="lead">'+esc(S.name)+', le gérant doit valider.</p><button class="btn block" data-act="goto" data-to="login">Retour</button></div></div>'}
 function viewChange(){return '<div class="screen"><div class="auth">'+mark()+'<h2>Nouveau PIN</h2><p class="lead">Le PIN temporaire ne sert qu’une fois.</p>'+dots(S.pin)+keys()+'<div class="err">'+esc(S.err)+'</div><button class="btn red block" data-act="changepin">Enregistrer</button></div></div>'}
@@ -136,7 +184,7 @@ function lotBar(){
 }
 function viewStaff(){
   const open=openSessions(); const cur=open.find(s=>s.id===S.sessionId)||open[0];
-  return '<header class="top">'+mark()+'<div class="meta"><b id="clock">'+clock()+'</b><span class="dot '+(cur?"on":"")+'"></span>'+(cur?"Ouvert":"Fermé")+'<br><button class="link" data-act="logout">Quitter</button></div></header><div class="main">'+(cur?sessionPick(open)+modeSwitch()+cards():'<div class="closed"><strong>CAISSE FERMÉE</strong><span class="muted">Le gérant n’a pas ouvert.</span></div>')+"</div>"+(cur?lotBar():"");
+  return '<header class="top">'+mark()+'<div class="meta"><b id="clock">'+clock()+'</b><span class="sync" id="sync">Sync</span><br><span class="dot '+(cur?"on":"")+'"></span>'+(cur?"Ouvert":"Fermé")+'<br><button class="link" data-act="logout">Quitter</button></div></header><div class="main">'+(cur?sessionPick(open)+modeSwitch()+cards():'<div class="closed"><strong>CAISSE FERMÉE</strong><span class="muted">Le gérant n’a pas ouvert.</span></div>')+"</div>"+(cur?lotBar():"");
 }
 function sessionPick(list){if(list.length<2)return "";return '<select data-act="pick">'+list.map(s=>'<option value="'+s.id+'" '+(s.id===S.sessionId?"selected":"")+">"+esc(s.label)+" · "+esc(frDate(s.businessDate))+"</option>").join("")+"</select>"}
 function modeSwitch(){return '<div class="switch"><button class="'+(S.mode==="lot"?"on":"")+'" data-act="mode" data-mode="lot">Lot</button><button class="'+(S.mode==="direct"?"on":"")+'" data-act="mode" data-mode="direct">Une par une</button></div>'}
@@ -147,7 +195,7 @@ function nav(){
 }
 function viewAdmin(){
   const body={caisse:adminCaisse,recap:adminRecap,heures:adminHeures,tarifs:adminTarifs,equipe:adminEquipe,jours:adminJours}[S.view]||adminCaisse;
-  return '<div class="admin"><header class="top">'+mark()+'<div class="meta"><b id="clock">'+clock()+'</b><button class="link" data-act="logout">Quitter</button></div></header><div class="main">'+body()+"</div>"+(S.view==="caisse"&&openSessions().length?lotBar():"")+nav()+"</div>";
+  return '<div class="admin"><header class="top">'+mark()+'<div class="meta"><b id="clock">'+clock()+'</b><span class="sync" id="sync">Sync</span><br><button class="link" data-act="logout">Quitter</button></div></header><div class="main">'+body()+"</div>"+(S.view==="caisse"&&openSessions().length?lotBar():"")+nav()+"</div>";
 }
 function adminCaisse(){
   const open=openSessions(); const cur=open.find(s=>s.id===S.sessionId)||open[0];
@@ -252,7 +300,22 @@ document.addEventListener("change",e=>{
   if(e.target.id==="file"&&e.target.files[0]){const f=e.target.files[0]; const r=new FileReader(); r.onload=()=>{try{const data=JSON.parse(r.result); if(!data.users)throw 0; localStorage.setItem(KEY,JSON.stringify(data)); toast("Sauvegarde reprise"); S.user=null; S.screen="login"; render()}catch(e){toast("Fichier illisible")}}; r.readAsText(f)}
 });
 setInterval(()=>{const c=document.getElementById("clock"); if(c)c.textContent=clock()},10000);
-setTimeout(()=>{document.getElementById("boot").hidden=true; app.hidden=false; render()},1100);
+function show(){
+  const boot=document.getElementById("boot");
+  boot.hidden=true; boot.style.display="none";
+  app.hidden=false; app.style.display="block";
+  try{render()}catch(err){app.textContent=err.message}
+}
+async function start(){
+  try{await pullDb()}catch(e){}
+  show();
+}
+setTimeout(start,900);
+setInterval(async()=>{
+  const tag=document.activeElement&&document.activeElement.tagName;
+  if(tag==="INPUT"||tag==="TEXTAREA"||tag==="SELECT") return;
+  try{ if(await pullDb()) render(); }catch(e){}
+},4000);
 </script>
 </body>
 </html>
