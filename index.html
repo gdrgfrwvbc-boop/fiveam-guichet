@@ -2,16 +2,16 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#070707">
 <title>FIVE:AM</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600&family=Share+Tech+Mono&display=swap">
 <style>
 :root{--bg:#070707;--bg2:#101010;--line:#2a2a2a;--text:#f3f1ec;--muted:#8f8b83;--red:#c8102e;--paper:#efece4;--ink:#161616}
-*{box-sizing:border-box}html,body{margin:0;background:var(--bg);color:var(--text)}
+*{box-sizing:border-box}html,body{margin:0;background:var(--bg);color:var(--text);touch-action:manipulation}
 body{font-family:Barlow,sans-serif;font-size:16px;min-height:100dvh;-webkit-tap-highlight-color:transparent}
-button,input,select{font:inherit;color:inherit}button{cursor:pointer}button:disabled{opacity:.4}
+button,input,select{font:inherit;color:inherit;touch-action:manipulation}button{cursor:pointer}button:disabled{opacity:.4}
 .boot{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#070707;z-index:9}
 .boot b{font-family:Anton,Impact,sans-serif;font-size:64px;font-weight:400;letter-spacing:.04em}
 .boot b i{color:var(--red);font-style:normal}.boot span{font-family:"Share Tech Mono",monospace;letter-spacing:.4em;color:var(--muted);font-size:12px}
@@ -44,8 +44,23 @@ input,select{width:100%;background:#101010;border:1px solid var(--line);padding:
 .card.paid{border-left:3px solid var(--red)}.card .nm{font-family:"Barlow Condensed",sans-serif;font-size:22px;text-transform:uppercase;line-height:.95}
 .card .pr{font-family:"Share Tech Mono",monospace;color:var(--muted);font-size:13px}
 .badge{position:absolute;top:8px;right:8px;background:var(--red);color:#fff;min-width:22px;height:22px;display:grid;place-items:center;font-family:"Share Tech Mono",monospace;font-size:13px}
-.lot{position:fixed;left:0;right:0;bottom:0;background:#0c0c0c;border-top:1px solid var(--line);padding:10px 12px calc(12px + env(safe-area-inset-bottom));z-index:5}
-.admin .lot{bottom:54px}
+.lot{position:fixed;left:0;right:0;bottom:0;background:#0c0c0c;border-top:1px solid var(--line);padding:8px 10px calc(8px + env(safe-area-inset-bottom));z-index:5}
+.admin .lot{bottom:calc(46px + env(safe-area-inset-bottom))}
+.desk{height:100dvh;display:flex;flex-direction:column;overflow:hidden}
+.desk .top{padding:6px 10px 4px}
+.desk .mark{font-size:22px}
+.desk .main{flex:1;min-height:0;padding:6px 8px 4px;display:flex;flex-direction:column;overflow:hidden}
+.desk .pad{flex:1;min-height:0;display:flex;flex-direction:column;gap:4px}
+.desk .pad .grid{flex:1;min-height:0;gap:6px;grid-auto-rows:1fr}
+.desk .card{min-height:0;padding:7px 8px}
+.desk .card .nm{font-size:16px}
+.desk .lab{margin:0}
+.desk .switch{margin-bottom:4px}
+.desk .switch button{padding:6px}
+.desk .live{margin:0 0 4px;padding:6px 8px}
+.desk .lot{position:static;padding:6px 8px}
+.desk .nav{position:static}
+.desk .chips{margin-bottom:4px}
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}.chip{border:1px solid var(--line);padding:4px 6px;display:flex;gap:6px;align-items:center}
 .chip button{width:28px;height:28px;background:transparent;border:1px solid var(--line)}
 .lot .row{display:flex;gap:8px}.lot .row button{flex:1}
@@ -174,7 +189,7 @@ function cards(){
   const types=db().types.filter(t=>t.active).sort((a,b)=>a.sort-b.sort);
   const card=t=>'<button class="card '+t.kind+'" data-act="add" data-id="'+t.id+'">'+(S.lot[t.id]?'<span class="badge">'+S.lot[t.id]+"</span>":"")+'<span class="nm">'+esc(t.name)+'</span><span class="pr">'+(t.kind==="free"?"Gratuit":euro(t.priceCents))+"</span></button>";
   const paid=types.filter(t=>t.kind==="paid"), free=types.filter(t=>t.kind==="free");
-  return (paid.length?'<div class="lab">Payant</div><div class="grid">'+paid.map(card).join("")+"</div>":"")+(free.length?'<div class="lab">Gratuit</div><div class="grid">'+free.map(card).join("")+"</div>":"");
+  return '<div class="pad">'+(paid.length?'<div class="grid">'+paid.map(card).join("")+"</div>":"")+(free.length?'<div class="grid">'+free.map(card).join("")+"</div>":"")+"</div>";
 }
 function lotBar(){
   if(S.mode==="direct")return '<div class="lot"><div class="muted">Chaque touche est validée</div></div>';
@@ -184,7 +199,7 @@ function lotBar(){
 }
 function viewStaff(){
   const open=openSessions(); const cur=open.find(s=>s.id===S.sessionId)||open[0];
-  return '<header class="top">'+mark()+'<div class="meta"><b id="clock">'+clock()+'</b><span class="sync" id="sync">Sync</span><br><span class="dot '+(cur?"on":"")+'"></span>'+(cur?"Ouvert":"Fermé")+'<br><button class="link" data-act="logout">Quitter</button></div></header><div class="main">'+(cur?sessionPick(open)+modeSwitch()+cards():'<div class="closed"><strong>CAISSE FERMÉE</strong><span class="muted">Le gérant n’a pas ouvert.</span></div>')+"</div>"+(cur?lotBar():"");
+  return '<div class="desk"><header class="top">'+mark()+'<div class="meta"><b id="clock">'+clock()+'</b><span class="sync" id="sync">Sync</span><br><span class="dot '+(cur?"on":"")+'"></span>'+(cur?"Ouvert":"Fermé")+'<br><button class="link" data-act="logout">Quitter</button></div></header><div class="main">'+(cur?sessionPick(open)+modeSwitch()+cards():'<div class="closed"><strong>CAISSE FERMÉE</strong><span class="muted">Le gérant n’a pas ouvert.</span></div>')+"</div>"+(cur?lotBar():"")+"</div>";
 }
 function sessionPick(list){if(list.length<2)return "";return '<select data-act="pick">'+list.map(s=>'<option value="'+s.id+'" '+(s.id===S.sessionId?"selected":"")+">"+esc(s.label)+" · "+esc(frDate(s.businessDate))+"</option>").join("")+"</select>"}
 function modeSwitch(){return '<div class="switch"><button class="'+(S.mode==="lot"?"on":"")+'" data-act="mode" data-mode="lot">Lot</button><button class="'+(S.mode==="direct"?"on":"")+'" data-act="mode" data-mode="direct">Une par une</button></div>'}
@@ -195,12 +210,12 @@ function nav(){
 }
 function viewAdmin(){
   const body={caisse:adminCaisse,recap:adminRecap,heures:adminHeures,tarifs:adminTarifs,equipe:adminEquipe,jours:adminJours}[S.view]||adminCaisse;
-  return '<div class="admin"><header class="top">'+mark()+'<div class="meta"><b id="clock">'+clock()+'</b><span class="sync" id="sync">Sync</span><br><button class="link" data-act="logout">Quitter</button></div></header><div class="main">'+body()+"</div>"+(S.view==="caisse"&&openSessions().length?lotBar():"")+nav()+"</div>";
+  return '<div class="admin'+(S.view==="caisse"?" desk":"")+'"><header class="top">'+mark()+'<div class="meta"><b id="clock">'+clock()+'</b><span class="sync" id="sync">Sync</span><br><button class="link" data-act="logout">Quitter</button></div></header><div class="main">'+body()+"</div>"+(S.view==="caisse"&&openSessions().length?lotBar():"")+nav()+"</div>";
 }
 function adminCaisse(){
   const open=openSessions(); const cur=open.find(s=>s.id===S.sessionId)||open[0];
   const live=cur?sum(active(db(),cur.id)):null;
-  return '<div style="display:flex;justify-content:space-between;align-items:center"><h2>Caisse</h2><button class="btn slim red" data-act="open">Ouvrir</button></div><label><span>Nom de session</span><input id="label" value="Porte"></label>'+(cur?'<div class="live"><span>'+esc(cur.label)+" · "+esc(frDate(cur.businessDate))+"</span><span>"+live.qty+" · "+euro(live.cents)+"</span></div>"+sessionPick(open)+modeSwitch()+cards()+'<button class="btn block" data-act="close">Clôturer</button>':'<div class="closed"><strong>FERMÉ</strong><span class="muted">Ouvre une session pour compter.</span></div>');
+  return cur?('<div class="live"><span>'+esc(cur.label)+" · "+esc(frDate(cur.businessDate))+'</span><span>'+live.qty+" · "+euro(live.cents)+'</span><button class="btn slim" data-act="close">Clôturer</button></div>'+sessionPick(open)+modeSwitch()+cards()):'<div style="display:flex;justify-content:space-between;align-items:center"><h2>Caisse</h2><button class="btn slim red" data-act="open">Ouvrir</button></div><label><span>Nom de session</span><input id="label" value="Porte"></label><div class="closed"><strong>FERMÉ</strong><span class="muted">Ouvre une session pour compter.</span></div>';
 }
 function weekOf(iso){const d=new Date(iso+"T12:00:00Z");const day=(d.getUTCDay()+6)%7;d.setUTCDate(d.getUTCDate()-day+3);const ft=new Date(Date.UTC(d.getUTCFullYear(),0,4));const w=1+Math.round(((d-ft)/86400000-3+((ft.getUTCDay()+6)%7))/7);return d.getUTCFullYear()+"-W"+String(w).padStart(2,"0")}
 function recapData(){
@@ -310,6 +325,7 @@ async function start(){
   try{await pullDb()}catch(e){}
   show();
 }
+document.addEventListener("gesturestart", e=>e.preventDefault());
 setTimeout(start,900);
 setInterval(async()=>{
   const tag=document.activeElement&&document.activeElement.tagName;
