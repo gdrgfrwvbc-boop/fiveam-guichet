@@ -217,6 +217,79 @@ function adminCaisse(){
   const live=cur?sum(active(db(),cur.id)):null;
   return cur?('<div class="live"><span>'+esc(cur.label)+" · "+esc(frDate(cur.businessDate))+'</span><span>'+live.qty+" · "+euro(live.cents)+'</span><button class="btn slim" data-act="close">Clôturer</button></div>'+sessionPick(open)+modeSwitch()+cards()):'<div style="display:flex;justify-content:space-between;align-items:center"><h2>Caisse</h2><button class="btn slim red" data-act="open">Ouvrir</button></div><label><span>Nom de session</span><input id="label" value="Porte"></label><div class="closed"><strong>FERMÉ</strong><span class="muted">Ouvre une session pour compter.</span></div>';
 }
+
+function pdfSafe(s){
+  const map={"é":"\\351","è":"\\350","ê":"\\352","ë":"\\353","à":"\\340","â":"\\342","ä":"\\344","ù":"\\371","û":"\\373","ô":"\\364","î":"\\356","ï":"\\357","ç":"\\347","É":"\\311","È":"\\310","À":"\\300","’":"'","·":"-","€":" EUR"};
+  return String(s||"").replace(/\\/g,"\\\\").replace(/\(/g,"\\(").replace(/\)/g,"\\)").replace(/[^\x20-\x7E]/g, ch=>map[ch]||"");
+}
+function buildPdf(pages){
+  const objs=[];
+  const add=body=>{objs.push(body); return objs.length};
+  const font=add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
+  const bold=add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>");
+  const contents=pages.map(stream=>add("<< /Length "+stream.length+" >>\nstream\n"+stream+"\nendstream"));
+  const pageIds=contents.map(()=>add(""));
+  const pagesId=add("");
+  contents.forEach((cid,i)=>{
+    objs[pageIds[i]-1]="<< /Type /Page /Parent "+pagesId+" 0 R /MediaBox [0 0 595 842] /Contents "+cid+" 0 R /Resources << /Font << /F1 "+font+" 0 R /F2 "+bold+" 0 R >> >> >>";
+  });
+  objs[pagesId-1]="<< /Type /Pages /Count "+pageIds.length+" /Kids ["+pageIds.map(id=>id+" 0 R").join(" ")+"] >>";
+  const catalog=add("<< /Type /Catalog /Pages "+pagesId+" 0 R >>");
+  let out="%PDF-1.4\n";
+  const xref=[0];
+  objs.forEach((body,i)=>{xref.push(out.length); out+=(i+1)+" 0 obj\n"+body+"\nendobj\n";});
+  const start=out.length;
+  out+="xref\n0 "+(objs.length+1)+"\n0000000000 65535 f \n"+xref.slice(1).map(n=>String(n).padStart(10,"0")+" 00000 n \n").join("");
+  out+="trailer << /Size "+(objs.length+1)+" /Root "+catalog+" 0 R >>\nstartxref\n"+start+"\n%%EOF";
+  return out;
+}
+async function exportPdf(){
+  const r=recapData();
+  if(!r.list.length){toast("Rien a exporter"); return}
+  const rows=[];
+  const title=S.range==="night"?"Cette nuit":S.range==="month"?"30 jours":"7 jours";
+  rows.push({t:"FIVE:AM", size:20, bold:true});
+  rows.push({t:"Guichet  ·  "+title, size:11});
+  rows.push({t:" "});
+  r.weeks.forEach(w=>rows.push({t:w.week+"    "+w.qty+" entrees    "+euro(w.cents).replace("€","EUR"), size:11, bold:true}));
+  r.list.forEach(d=>{
+    rows.push({t:" "});
+    rows.push({t:frDate(d.date)+"  ·  "+d.labels.join(" / "), size:13, bold:true});
+    d.byType.forEach(t=>{
+      const left=t.name.padEnd(24," ").slice(0,24);
+      rows.push({t:left+"  "+String(t.qty).padStart(4," ")+"   "+euro(t.cents).replace("€","EUR"), size:11});
+    });
+    rows.push({t:"TOTAL".padEnd(24," ")+"  "+String(d.qty).padStart(4," ")+"   "+euro(d.cents).replace("€","EUR"), size:11, bold:true});
+  });
+  if(S.detail){
+    rows.push({t:" "});
+    rows.push({t:"Detail", size:13, bold:true});
+    r.entries.filter(e=>!e.voided).forEach(e=>rows.push({t:frTime(e.at)+"  "+e.typeName+" x"+e.qty+"  "+e.byName, size:9}));
+  }
+  const pages=[];
+  let y=800, ops="";
+  const flush=()=>{pages.push("BT\n"+ops+"ET\n"); ops=""; y=800};
+  rows.forEach(row=>{
+    if(y<48) flush();
+    ops+="/F"+(row.bold?2:1)+" "+(row.size||11)+" Tf\n1 0 0 1 40 "+y+" Tm\n("+pdfSafe(row.t)+") Tj\n";
+    y-= (row.size||11)+6;
+  });
+  if(ops) flush();
+  const pdf=buildPdf(pages);
+  const blob=new Blob([pdf],{type:"application/pdf"});
+  const name="fiveam-"+(r.list[r.list.length-1]?.date||"recap")+".pdf";
+  const file=new File([blob], name, {type:"application/pdf"});
+  try{
+    if(navigator.share && navigator.canShare && navigator.canShare({files:[file]})){
+      await navigator.share({files:[file], title:"FIVE:AM recap"});
+      return;
+    }
+  }catch(e){ if(e.name==="AbortError") return; }
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download=name;
+  a.click();
+}
 function weekOf(iso){const d=new Date(iso+"T12:00:00Z");const day=(d.getUTCDay()+6)%7;d.setUTCDate(d.getUTCDate()-day+3);const ft=new Date(Date.UTC(d.getUTCFullYear(),0,4));const w=1+Math.round(((d-ft)/86400000-3+((ft.getUTCDay()+6)%7))/7);return d.getUTCFullYear()+"-W"+String(w).padStart(2,"0")}
 function recapData(){
   const d=db(); const to=businessDate(); const fromDate=new Date(to+"T12:00:00Z"); fromDate.setUTCDate(fromDate.getUTCDate()-(S.range==="month"?30:S.range==="night"?0:7));
@@ -232,7 +305,7 @@ function recapData(){
 }
 function adminRecap(){
   const r=recapData();
-  return '<h2>Récap</h2><div class="actions" style="margin-bottom:8px"><button class="btn slim '+(S.range==="night"?"red":"")+'" data-act="range" data-range="night">Cette nuit</button><button class="btn slim '+(S.range==="week"?"red":"")+'" data-act="range" data-range="week">7 jours</button><button class="btn slim '+(S.range==="month"?"red":"")+'" data-act="range" data-range="month">30 jours</button><button class="btn slim '+(S.detail?"red":"")+'" data-act="detail">'+(S.detail?"Avec détail":"Sans détail")+"</button></div>"
+  return '<h2>Récap</h2><div class="actions" style="margin-bottom:8px"><button class="btn slim '+(S.range==="night"?"red":"")+'" data-act="range" data-range="night">Cette nuit</button><button class="btn slim '+(S.range==="week"?"red":"")+'" data-act="range" data-range="week">7 jours</button><button class="btn slim '+(S.range==="month"?"red":"")+'" data-act="range" data-range="month">30 jours</button><button class="btn slim '+(S.detail?"red":"")+'" data-act="detail">'+(S.detail?"Avec détail":"Sans détail")+'</button><button class="btn slim red" data-act="pdf">PDF</button></div>' 
   +r.weeks.map(w=>'<div class="panel"><b>'+esc(w.week)+"</b><div class=\"mono\">"+w.qty+" · "+euro(w.cents)+"</div></div>").join("")
   +r.list.map(d=>{const peak=d.hours.indexOf(Math.max(...d.hours));return '<article class="ticket"><div class="who">FIVE<i>:</i>AM</div><div class="sub">'+esc(frDate(d.date))+" · "+esc(d.labels.join(" / "))+'</div><table>'+d.byType.map(t=>"<tr><td>"+esc(t.name)+'</td><td class="n">'+t.qty+'</td><td class="n">'+euro(t.cents)+"</td></tr>").join("")+'<tr class="tot"><td>Total</td><td class="n">'+d.qty+'</td><td class="n">'+euro(d.cents)+'</td></tr></table><div class="sub">Pic '+String(peak).padStart(2,"0")+"h</div></article>"}).join("")
   +(S.detail?'<table class="plain">'+r.entries.map(e=>'<tr class="'+(e.voided?"void":"")+'"><td class="mono">'+frTime(e.at)+"</td><td>"+esc(e.typeName)+"</td><td>"+e.qty+"</td><td>"+esc(e.byName)+"</td><td>"+(e.voided?"":'<button class="btn slim" data-act="void" data-id="'+e.id+'">Annuler</button>')+"</td></tr>").join("")+"</table>":"")
@@ -294,6 +367,7 @@ document.addEventListener("click", (e)=>{
     if(act==="close"){if(!confirm("Clôturer ?"))return; const d=db(); const s=d.sessions.find(x=>x.id===S.sessionId&&x.status==="open"); if(s){s.status="closed"; s.closedAt=new Date().toISOString()} save(d); S.view="recap"; S.range="night"; render(); return}
     if(act==="range"){S.range=b.dataset.range; render(); return}
     if(act==="detail"){S.detail=!S.detail; render(); return}
+    if(act==="pdf"){exportPdf(); return}
     if(act==="void"){const d=db(); const e=d.entries.find(x=>x.id===+b.dataset.id); if(e)e.voided=true; save(d); render(); return}
     if(act==="cmp"){const id=+b.dataset.id; S.compare=b.checked?[...new Set([...S.compare,id])].slice(0,4):S.compare.filter(x=>x!==id); draw(); return}
     if(act==="add-type"){const name=document.getElementById("tname").value.trim(); const cents=Math.round(Number(String(document.getElementById("tprice").value).replace(",","."))*100)||0; if(name.length<2)return toast("Nom trop court"); const d=db(); d.types.push({id:nid(d),name,priceCents:Math.max(0,cents),kind:cents?"paid":"free",active:true,sort:d.types.length}); save(d); render(); return}
