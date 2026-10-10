@@ -140,7 +140,7 @@ async function pushDb(d){
   pushing=true;
   try{
     const raw=JSON.stringify(d);
-    const size=500;
+    const size=120;
     const parts=[];
     for(let i=0;i<raw.length;i+=size) parts.push(raw.slice(i,i+size));
     await kvPlain("n", String(parts.length));
