@@ -53,8 +53,14 @@ input,select{width:100%;background:#101010;border:1px solid var(--line);padding:
 .desk .main{flex:1;min-height:0;padding:6px 8px 4px;display:flex;flex-direction:column;overflow:hidden}
 .desk .pad{flex:1;min-height:0;display:flex;flex-direction:column;gap:4px}
 .desk .pad .grid{flex:1;min-height:0;gap:6px;grid-auto-rows:1fr}
-.desk .card{min-height:0;padding:7px 8px}
-.desk .card .nm{font-size:16px}
+.desk .card{min-height:0;padding:8px 10px}
+.desk .card .nm{font-size:22px}
+.desk .card .pr{font-size:15px}
+.qtybar{position:absolute;right:6px;bottom:6px;display:flex;align-items:center;gap:4px}
+.qtybar span{width:34px;height:34px;border:1px solid var(--line);display:grid;place-items:center;font-size:22px;background:#161616}
+.qtybar b{min-width:22px;text-align:center;font-family:"Share Tech Mono",monospace;font-size:16px}
+.recapslot{height:38px;min-height:38px;overflow:hidden;display:flex;align-items:center;margin-bottom:6px;font-size:16px;color:var(--text)}
+.desk .lot .row button{font-size:22px;padding:12px 10px}
 .desk .lab{margin:0}
 .desk .switch{margin-bottom:4px}
 .desk .switch button{padding:6px}
@@ -203,15 +209,20 @@ function viewChange(){return '<div class="screen"><div class="auth">'+mark()+'<h
 function openSessions(){return db().sessions.filter(s=>s.status==="open")}
 function cards(){
   const types=db().types.filter(t=>t.active).sort((a,b)=>a.sort-b.sort);
-  const card=t=>'<button class="card '+t.kind+'" data-act="add" data-id="'+t.id+'">'+(S.lot[t.id]?'<span class="badge">'+S.lot[t.id]+"</span>":"")+'<span class="nm">'+esc(t.name)+'</span><span class="pr">'+(t.kind==="free"?"Gratuit":euro(t.priceCents))+"</span></button>";
+  const card=t=>{
+    const q=S.lot[t.id]||0;
+    const ctrls=q?'<span class="qtybar"><span data-act="minus" data-id="'+t.id+'">–</span><b>'+q+'</b><span data-act="plus" data-id="'+t.id+'">+</span></span>':"";
+    return '<button class="card '+t.kind+'" data-act="add" data-id="'+t.id+'">'+ctrls+'<span class="nm">'+esc(t.name)+'</span><span class="pr">'+(t.kind==="free"?"Gratuit":euro(t.priceCents))+"</span></button>";
+  };
   const paid=types.filter(t=>t.kind==="paid"), free=types.filter(t=>t.kind==="free");
   return '<div class="pad">'+(paid.length?'<div class="grid">'+paid.map(card).join("")+"</div>":"")+(free.length?'<div class="grid">'+free.map(card).join("")+"</div>":"")+"</div>";
 }
 function lotBar(){
-  if(S.mode==="direct")return '<div class="lot"><div class="muted">Chaque touche est validée</div></div>';
+  if(S.mode==="direct")return '<div class="lot"><div class="recapslot"><span class="muted">Chaque touche est validée</span></div></div>';
   const lines=Object.entries(S.lot).filter(([,q])=>q>0);
   const n=lines.reduce((a,[,q])=>a+q,0);
-  return '<div class="lot"><div class="chips">'+ (lines.map(([id,q])=>{const t=db().types.find(x=>x.id===+id);return '<span class="chip">'+esc(t?t.name:"")+" ×"+q+' <button data-act="minus" data-id="'+id+'">–</button><button data-act="plus" data-id="'+id+'">+</button></span>'}).join("")||'<span class="muted">Tape un type, puis valide</span>')+'</div><div class="row"><button class="btn" data-act="clear">Vider</button><button class="btn red" data-act="validate" '+(n?"":"disabled")+">Valider"+(n?" · "+n:"")+"</button></div></div>";
+  const recap=lines.map(([id,q])=>{const t=db().types.find(x=>x.id===+id);return esc(t?t.name:"")+" ×"+q}).join(" · ")||'<span class="muted">Tape un type, puis valide</span>';
+  return '<div class="lot"><div class="recapslot">'+recap+'</div><div class="row"><button class="btn" data-act="clear">Vider</button><button class="btn red" data-act="validate" '+(n?"":"disabled")+">Valider"+(n?" · "+n:"")+"</button></div></div>";
 }
 function viewStaff(){
   const open=openSessions(); const cur=open.find(s=>s.id===S.sessionId)||open[0];
