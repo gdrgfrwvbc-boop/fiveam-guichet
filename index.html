@@ -28,6 +28,7 @@ input,select{width:100%;background:#101010;border:1px solid var(--line);padding:
 .dots i.on{border-color:var(--text)}
 .keys{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.keys button{height:56px;background:#101010;border:1px solid var(--line);font-family:"Share Tech Mono",monospace;font-size:22px}
 .keys button:active{border-color:var(--red)}
+.whos{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 14px}.who{border:1px solid var(--line);background:#101010;padding:10px 12px;font-family:"Barlow Condensed",sans-serif;text-transform:uppercase;letter-spacing:.04em}.who.on{background:var(--text);color:#070707}
 .btn{border:1px solid var(--line);background:transparent;padding:12px 14px;text-transform:uppercase;letter-spacing:.08em;font-family:"Barlow Condensed",sans-serif;font-size:18px;font-weight:600}
 .btn.red{background:var(--red);border-color:var(--red);color:#fff}.btn.block{width:100%;margin-top:12px}.btn.slim{padding:8px 10px;font-size:16px}
 .link{background:none;border:0;color:var(--muted);text-decoration:underline;padding:10px 0}
@@ -97,7 +98,7 @@ table.plain{width:100%;border-collapse:collapse;font-size:14px}table.plain td{pa
 <div id="app" hidden></div>
 <div id="toast" class="toast" hidden></div>
 <script>
-const KEY="fiveam-v1";
+const KEY="fiveam-v2";
 const DAYS=["Dim","Lun","Mar","Mer","Jeu","Ven","Sam"];
 const NIGHT=[20,21,22,23,0,1,2,3,4,5,6,7];
 const STROKES=["#f3f1ec","#c8102e","#8f8b83","#d8d2c6"];
@@ -158,7 +159,7 @@ async function pullDb(){
   return data;
 }
 function nid(d){return d.seq++}
-const S={user:null,screen:"login",pin:"",pin2:"",step:1,err:"",name:"",mode:localStorage.getItem("fam_mode")||"lot",lot:{},view:"caisse",sessionId:null,detail:false,range:"week",compare:[],revealed:{},temp:null,recovery:""};
+const S={user:null,screen:"login",pin:"",pin2:"",step:1,err:"",name:"",pickId:null,mode:localStorage.getItem("fam_mode")||"lot",lot:{},view:"caisse",sessionId:null,detail:false,range:"week",compare:[],revealed:{},temp:null,recovery:""};
 const app=document.getElementById("app");
 const toastEl=document.getElementById("toast");
 function esc(s){const a=String.fromCharCode(38);return String(s??"").replace(/&/g,a+"amp;").replace(/</g,a+"lt;").replace(/>/g,a+"gt;").replace(/"/g,a+"quot;")}
@@ -184,7 +185,13 @@ function render(){
   if(S.screen==="app"&&S.user&&S.user.role==="admin"&&S.view==="heures")draw();
 }
 function viewSetup(){return '<div class="screen"><div class="auth">'+mark()+'<div class="kicker">Première fois</div><h2>Ton compte</h2><p class="lead">Toi seul verras les totaux. Les autres téléphones ouvrent le même lien et ne voient que les boutons.</p><label><span>Nom</span><input id="name" value="'+esc(S.name)+'"></label>'+dots(S.pin)+keys()+'<div class="err">'+esc(S.err)+'</div><button class="btn red block" data-act="setup">Créer</button></div></div>'}
-function viewLogin(){return '<div class="screen"><div class="auth">'+mark()+'<div class="kicker">Guichet</div><h2>Ouverture</h2><p class="lead">Même lien sur tous les téléphones. Les entrées se partagent.</p><label><span>Nom</span><input id="name" value="'+esc(S.name)+'"></label>'+dots(S.pin)+keys()+'<div class="err">'+esc(S.err)+'</div><button class="btn red block" data-act="login">Entrer</button><div style="display:flex;justify-content:space-between"><button class="link" data-act="goto" data-to="request">Demander un accès</button></div></div></div>'}
+function viewLogin(){
+  const users=db().users.filter(u=>u.status!=="rejected");
+  if(!users.length) return viewSetup();
+  if(!S.pickId||!users.some(u=>u.id===S.pickId)) S.pickId=users[0].id;
+  const list=users.map(u=>'<button class="who '+(u.id===S.pickId?"on":"")+'" data-act="pickuser" data-id="'+u.id+'">'+esc(u.name)+(u.role==="admin"?" · gérant":"")+'</button>').join("");
+  return '<div class="screen"><div class="auth">'+mark()+'<div class="kicker">Guichet</div><h2>Qui est là</h2><div class="whos">'+list+'</div>'+dots(S.pin)+keys()+'<div class="err">'+esc(S.err)+'</div><button class="btn red block" data-act="login">Entrer</button><button class="link" data-act="goto" data-to="request">Nouveau</button></div></div>';
+}
 function viewRequest(){return '<div class="screen"><div class="auth">'+mark()+'<div class="kicker">Équipe</div><h2>Demande</h2><p class="lead">Nom + PIN à 6 chiffres. Le gérant valide.</p><label><span>Nom</span><input id="name" value="'+esc(S.name)+'"></label><div class="muted">'+(S.step===1?"Choisis le PIN":"Confirme le PIN")+"</div>"+dots(S.step===1?S.pin:S.pin2)+keys()+'<div class="err">'+esc(S.err)+'</div><button class="btn red block" data-act="request">Envoyer</button><button class="link" data-act="goto" data-to="login">Retour</button></div></div>'}
 function viewPending(){return '<div class="screen"><div class="auth">'+mark()+'<h2>En attente</h2><p class="lead">'+esc(S.name)+', le gérant doit valider.</p><button class="btn block" data-act="goto" data-to="login">Retour</button></div></div>'}
 function viewChange(){return '<div class="screen"><div class="auth">'+mark()+'<h2>Nouveau PIN</h2><p class="lead">Le PIN temporaire ne sert qu’une fois.</p>'+dots(S.pin)+keys()+'<div class="err">'+esc(S.err)+'</div><button class="btn red block" data-act="changepin">Enregistrer</button></div></div>'}
@@ -356,7 +363,8 @@ document.addEventListener("click", (e)=>{
     if(act==="key"){const k=b.dataset.k; const field=S.screen==="request"&&S.step===2?"pin2":"pin"; if(k==="C")S[field]=""; else if(k==="⌫")S[field]=S[field].slice(0,-1); else if(S[field].length<6)S[field]+=k; if(S.screen==="request"&&S.step===1&&S.pin.length===6)S.step=2; render(); return}
     if(act==="goto"){S.screen=b.dataset.to; S.err=""; S.pin=""; S.pin2=""; S.step=1; render(); return}
     if(act==="setup"){if(S.name.trim().length<2||S.pin.length!==6){S.err="Nom et PIN à 6 chiffres."; render(); return} const d=db(); const code="FAM-"+Math.random().toString(16).slice(2,8).toUpperCase(); d.users.push({id:nid(d),name:S.name.trim(),pin:S.pin,role:"admin",status:"active",recovery:code}); save(d); S.user=d.users[0]; S.recovery=code; S.screen="app"; S.view="jours"; S.pin=""; render(); return}
-    if(act==="login"){const d=db(); const u=d.users.find(x=>x.name.toLowerCase()===S.name.trim().toLowerCase()&&x.pin===S.pin); if(!u){S.err="Nom ou PIN incorrect."; render(); return} if(u.status==="pending"){S.screen="pending"; render(); return} if(u.status!=="active"){S.err="Accès désactivé."; render(); return} S.user=u; S.pin=""; S.screen=u.mustChange?"changepin":"app"; render(); return}
+    if(act==="pickuser"){S.pickId=+b.dataset.id; S.pin=""; S.err=""; render(); return}
+    if(act==="login"){const d=db(); const u=d.users.find(x=>x.id===S.pickId); if(!u||u.pin!==S.pin){S.err="PIN incorrect."; render(); return} if(u.status==="pending"){S.screen="pending"; render(); return} if(u.status!=="active"){S.err="Accès désactivé."; render(); return} S.user=u; S.pin=""; S.screen=u.mustChange?"changepin":"app"; render(); return}
     if(act==="request"){if(S.pin.length!==6||S.pin!==S.pin2){S.err="Les deux PIN ne correspondent pas."; render(); return} const d=db(); if(d.users.some(u=>u.name.toLowerCase()===S.name.trim().toLowerCase()&&u.status!=="rejected")){S.err="Nom déjà utilisé ou en attente."; render(); return} d.users.push({id:nid(d),name:S.name.trim(),pin:S.pin,role:"staff",status:"pending"}); save(d); S.screen="pending"; render(); return}
     if(act==="changepin"){if(S.pin.length!==6){S.err="6 chiffres."; render(); return} const d=db(); const u=d.users.find(x=>x.id===S.user.id); u.pin=S.pin; u.mustChange=false; u.resetRequested=false; save(d); S.user=u; S.screen="app"; S.pin=""; render(); return}
     if(act==="logout"){S.user=null; S.screen="login"; S.lot={}; render(); return}
