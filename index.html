@@ -111,10 +111,12 @@ function save(d){
   d.rev=Date.now();
   localStorage.setItem(KEY,JSON.stringify(d));
   clearTimeout(pushTimer);
-  pushTimer=setTimeout(()=>pushDb(d),250);
+  pushTimer=setTimeout(()=>pushDb(d),300);
 }
 const ROOM="fam7k2porte";
 const KV="https://keyvalue.immanuel.co/api/KeyVal";
+function b64e(s){return btoa(unescape(encodeURIComponent(s))).replace(/=+$/,"")}
+function b64d(s){const pad=s+"===".slice((s.length+3)%4); return decodeURIComponent(escape(atob(pad)))}
 async function kvGet(key){
   const r=await fetch(KV+"/GetValue/"+ROOM+"/"+key);
   if(!r.ok) return null;
@@ -123,14 +125,16 @@ async function kvGet(key){
   return JSON.parse(t);
 }
 async function kvSet(key,value){
-  await fetch(KV+"/UpdateValue/"+ROOM+"/"+key+"/"+encodeURIComponent(value),{method:"POST",body:""});
+  const url=KV+"/UpdateValue/"+ROOM+"/"+key+"/"+encodeURIComponent(b64e(String(value)));
+  const r=await fetch(url,{method:"POST",headers:{"Content-Length":"0"},body:""});
+  if(!r.ok) throw new Error("sync");
 }
 async function pushDb(d){
-  if(pushing){clearTimeout(pushTimer); pushTimer=setTimeout(()=>pushDb(db()),400); return}
+  if(pushing){clearTimeout(pushTimer); pushTimer=setTimeout(()=>pushDb(db()),500); return}
   pushing=true;
   try{
     const raw=JSON.stringify(d);
-    const size=350;
+    const size=500;
     const parts=[];
     for(let i=0;i<raw.length;i+=size) parts.push(raw.slice(i,i+size));
     await kvSet("n", String(parts.length));
@@ -147,7 +151,7 @@ async function pullDb(){
   const n=Number(await kvGet("n"));
   if(!n) return null;
   let raw="";
-  for(let i=0;i<n;i++){const part=await kvGet("p"+i); if(part==null) return null; raw+=part}
+  for(let i=0;i<n;i++){const part=await kvGet("p"+i); if(part==null) return null; raw+=b64d(part)}
   const data=JSON.parse(raw);
   remoteRev=Number(rev);
   localStorage.setItem(KEY,JSON.stringify(data));
