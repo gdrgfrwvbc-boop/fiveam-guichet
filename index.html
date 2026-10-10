@@ -116,14 +116,19 @@ function save(d){
 }
 const ROOM="fam7k2porte";
 const KV="https://keyvalue.immanuel.co/api/KeyVal";
-function b64e(s){return btoa(unescape(encodeURIComponent(s))).replace(/=+$/,"")}
-function b64d(s){const pad=s+"===".slice((s.length+3)%4); return decodeURIComponent(escape(atob(pad)))}
+function b64e(s){return btoa(unescape(encodeURIComponent(s))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"")}
+function b64d(s){const t=s.replace(/-/g,"+").replace(/_/g,"/"); const pad=t+"===".slice((t.length+3)%4); return decodeURIComponent(escape(atob(pad)))}
 async function kvGet(key){
   const r=await fetch(KV+"/GetValue/"+ROOM+"/"+key);
   if(!r.ok) return null;
   const t=await r.text();
   if(!t||t.includes("ExceptionMessage")) return null;
   return JSON.parse(t);
+}
+async function kvPlain(key,value){
+  const url=KV+"/UpdateValue/"+ROOM+"/"+key+"/"+encodeURIComponent(String(value));
+  const r=await fetch(url,{method:"POST",headers:{"Content-Length":"0"},body:""});
+  if(!r.ok) throw new Error("sync");
 }
 async function kvSet(key,value){
   const url=KV+"/UpdateValue/"+ROOM+"/"+key+"/"+encodeURIComponent(b64e(String(value)));
@@ -138,9 +143,9 @@ async function pushDb(d){
     const size=500;
     const parts=[];
     for(let i=0;i<raw.length;i+=size) parts.push(raw.slice(i,i+size));
-    await kvSet("n", String(parts.length));
+    await kvPlain("n", String(parts.length));
     for(let i=0;i<parts.length;i++) await kvSet("p"+i, parts[i]);
-    await kvSet("rev", String(d.rev||Date.now()));
+    await kvPlain("rev", String(d.rev||Date.now()));
     remoteRev=d.rev||Date.now();
     const el=document.getElementById("sync"); if(el) el.textContent="En ligne";
   }catch(e){const el=document.getElementById("sync"); if(el) el.textContent="Hors ligne"}
